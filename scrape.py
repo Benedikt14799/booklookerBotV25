@@ -5,13 +5,13 @@ import re
 import aiohttp
 from bs4 import BeautifulSoup
 
-from decimal import Decimal, ROUND_HALF_UP
-
 import database
 import isbn_processing
+import picture_processing
 import price_processing
-# import dataBL
-# import dataDNB
+import get_data_bl
+
+
 
 logger = logging.getLogger(__name__)
 number_pattern = re.compile(r"\d+")
@@ -179,17 +179,27 @@ async def process_library_links_async(db_pool):
             results = await conn.fetch("SELECT id, LinkToBL FROM library")
 
         async with aiohttp.ClientSession() as session:
-            tasks = []
+            # Ergebnisse der Verarbeitung sammeln
             for row in results:
                 num, link = row['id'], row['linktobl']
-                # Asynchrone Verarbeitung jedes Buches mit der Funktion `process_book`
-                tasks.append(isbn_processing.process_entry(session, link, num, db_pool))
+                # Verarbeite jeden Eintrag einzeln
+                has_isbn = await isbn_processing.process_entry(session, link, num, db_pool)
 
-            # Parallele Verarbeitung aller Aufgaben
-            await asyncio.gather(*tasks)
+                # Auf Rückgabewert reagieren
+                if has_isbn:
+                    logger.info(f"Artikel {num} hat eine gültige ISBN. Weitere Verarbeitung wird gestartet.")
+
+                    # Beispiel: Preisberechnung aufrufen, wenn eine ISBN vorhanden ist
+                    soup = BeautifulSoup(await fetch_html(session, link), "html.parser")
+                    await price_processing.get_price(soup, num, db_pool)
+                    await picture_processing.get_picture(soup, num, db_pool)
+
+                else:
+                    logger.warning(f"Artikel {num} hat keine gültige ISBN. Wird nicht weiter verarbeitet.")
     except Exception as e:
         # Fehler beim Abrufen oder Verarbeiten loggen
-        logger.error(f"Fehler in get_isbn_and_link_to_different_scrape_actions_async: {e}")
+        logger.error(f"Fehler in process_library_links_async: {e}")
+
 
 
 """

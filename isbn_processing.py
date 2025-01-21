@@ -1,54 +1,60 @@
-import asyncio
 import logging
 import re
 
-import aiohttp
 from bs4 import BeautifulSoup
 import scrape
-import price_processing
 
 logger = logging.getLogger(__name__)
 
-async def process_entry(session, link, num, db_pool):
+
+async def process_entry(session, link, num, db_pool) -> bool:
+    """
+    Verarbeitet einen Datensatz, prüft, ob eine ISBN vorhanden ist, und speichert sie in der DB.
+
+    Gibt zurück, ob eine gültige ISBN vorhanden ist.
+
+    :param session: aiohttp-Sitzung für HTTP-Requests.
+    :param link: URL des Artikels.
+    :param num: ID des Artikels in der Datenbank.
+    :param db_pool: Verbindung zur Datenbank.
+    :return: True, wenn eine gültige ISBN gefunden wurde, ansonsten False.
+    """
     try:
         # HTML-Inhalt laden und parsen
         html_content = await scrape.fetch_html(session, link)
         soup = BeautifulSoup(html_content, "html.parser")
         properties = scrape.extract_properties(soup)
 
-        # ISBN verarbeiten
+        # ISBN extrahieren
         isbn = properties.get("ISBN:")
         if not isbn:
             logger.warning(f"Keine ISBN für Artikel {num} gefunden. Lösche den Datensatz.")
             # Datensatz löschen, falls keine ISBN vorhanden ist
             async with db_pool.acquire() as conn:
                 await conn.execute("DELETE FROM library WHERE id = $1", num)
-            return
+            return False
+
+        # Prüfen, ob die ISBN gültig ist
         try:
             isbn = get_isbn(isbn)
             if not isbn:
                 raise ValueError("Ungültige ISBN")
 
-            # Wenn die ISBN gültig ist, schreibe sie in die Datenbank
+            # Gültige ISBN in die Datenbank speichern
             async with db_pool.acquire() as conn:
                 await conn.execute("UPDATE library SET ISBN = $1 WHERE id = $2", isbn, num)
-
-            logger.info(f"Verarbeitete und gespeicherte ISBN für Artikel {num}: {isbn}")
-
-            # Preis berechnen und speichern
-            # final_price = await price_processing.get_price(soup, num, db_pool)
-            # if final_price:
-            #     logger.info(f"Preis für Artikel {num} erfolgreich berechnet: {final_price}")
-
-
+            logger.info(f"ISBN für Artikel {num} gefunden und gespeichert: {isbn}")
+            return True
         except ValueError as ve:
             logger.warning(f"Ungültige ISBN für Artikel {num}: {ve}. Lösche den Datensatz.")
-            # Datensatz löschen, falls die ISBN ungültig ist
+            # Datensatz löschen, falls ISBN ungültig ist
             async with db_pool.acquire() as conn:
                 await conn.execute("DELETE FROM library WHERE id = $1", num)
-            return
+            return False
     except Exception as e:
-        logger.error(f"Fehler beim Verarbeiten des Buches mit id {num}: {e}")
+        logger.error(f"Fehler beim Verarbeiten von Artikel {num}: {e}")
+        return False
+
 
 def get_isbn(isbn):
     """

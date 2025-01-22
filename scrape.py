@@ -9,9 +9,8 @@ import database
 import isbn_processing
 import picture_processing
 import price_processing
-import get_data_bl
-
-
+import bl_processing
+from picture_processing import PictureProcessing
 
 logger = logging.getLogger(__name__)
 number_pattern = re.compile(r"\d+")
@@ -179,26 +178,39 @@ async def process_library_links_async(db_pool):
             results = await conn.fetch("SELECT id, LinkToBL FROM library")
 
         async with aiohttp.ClientSession() as session:
-            # Ergebnisse der Verarbeitung sammeln
             for row in results:
                 num, link = row['id'], row['linktobl']
-                # Verarbeite jeden Eintrag einzeln
-                has_isbn = await isbn_processing.process_entry(session, link, num, db_pool)
 
-                # Auf Rückgabewert reagieren
+                # Verarbeite jeden Eintrag und erhalte die ISBN (falls vorhanden)
+                has_isbn, isbn = await isbn_processing.process_entry(session, link, num, db_pool)
+
                 if has_isbn:
-                    logger.info(f"Artikel {num} hat eine gültige ISBN. Weitere Verarbeitung wird gestartet.")
+                    logger.info(f"Artikel {num} hat eine gültige ISBN: {isbn}. Weitere Verarbeitung wird gestartet.")
 
-                    # Beispiel: Preisberechnung aufrufen, wenn eine ISBN vorhanden ist
-                    soup = BeautifulSoup(await fetch_html(session, link), "html.parser")
-                    await price_processing.get_price(soup, num, db_pool)
-                    await picture_processing.get_picture(soup, num, db_pool)
+                    # Versuche, den HTML-Inhalt abzurufen
+                    html_content = await fetch_html(session, link)
+                    if html_content:
+                        soup = BeautifulSoup(html_content, "html.parser")
 
+                        # Preisberechnung aufrufen und Bilder mit ISBN verarbeiten
+                        await price_processing.get_price(soup, num, db_pool)
+                        await PictureProcessing.get_pictures_with_dnb(soup, num, db_pool, isbn)
+
+                        # Eigenschaften in die Datenbank speichern
+                        await bl_processing.PropertyToDatabase.process_and_save(soup, num, db_pool)
+                    else:
+                        logger.error(f"HTML-Inhalt konnte für Artikel {num} nicht geladen werden. Überspringe Verarbeitung.")
                 else:
                     logger.warning(f"Artikel {num} hat keine gültige ISBN. Wird nicht weiter verarbeitet.")
     except Exception as e:
-        # Fehler beim Abrufen oder Verarbeiten loggen
         logger.error(f"Fehler in process_library_links_async: {e}")
+
+
+
+
+    except Exception as e:
+        logger.error(f"Fehler in process_library_links_async: {e}")
+
 
 
 

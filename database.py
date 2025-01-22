@@ -40,7 +40,7 @@ async def create_table(db_pool):
                 Minimum_Best_Offer_Price NUMERIC,
                 VAT_percent NUMERIC,
                 Immediate_pay_required BOOLEAN,
-                Location INTEGER,
+                Location VARCHAR(255),
                 Shipping_service_1_option VARCHAR(255),
                 Shipping_service_1_cost NUMERIC,
                 Shipping_service_1_priority INTEGER,

@@ -7,17 +7,17 @@ import scrape
 logger = logging.getLogger(__name__)
 
 
-async def process_entry(session, link, num, db_pool) -> bool:
+async def process_entry(session, link, num, db_pool) -> (bool, str | None):
     """
     Verarbeitet einen Datensatz, prüft, ob eine ISBN vorhanden ist, und speichert sie in der DB.
 
-    Gibt zurück, ob eine gültige ISBN vorhanden ist.
+    Gibt zurück, ob eine gültige ISBN vorhanden ist und die ISBN selbst.
 
     :param session: aiohttp-Sitzung für HTTP-Requests.
     :param link: URL des Artikels.
     :param num: ID des Artikels in der Datenbank.
     :param db_pool: Verbindung zur Datenbank.
-    :return: True, wenn eine gültige ISBN gefunden wurde, ansonsten False.
+    :return: Tuple (bool, str | None). True und die ISBN, wenn gültig, ansonsten False und None.
     """
     try:
         # HTML-Inhalt laden und parsen
@@ -32,7 +32,7 @@ async def process_entry(session, link, num, db_pool) -> bool:
             # Datensatz löschen, falls keine ISBN vorhanden ist
             async with db_pool.acquire() as conn:
                 await conn.execute("DELETE FROM library WHERE id = $1", num)
-            return False
+            return False, None
 
         # Prüfen, ob die ISBN gültig ist
         try:
@@ -44,16 +44,17 @@ async def process_entry(session, link, num, db_pool) -> bool:
             async with db_pool.acquire() as conn:
                 await conn.execute("UPDATE library SET ISBN = $1 WHERE id = $2", isbn, num)
             logger.info(f"ISBN für Artikel {num} gefunden und gespeichert: {isbn}")
-            return True
+            return True, isbn
         except ValueError as ve:
             logger.warning(f"Ungültige ISBN für Artikel {num}: {ve}. Lösche den Datensatz.")
             # Datensatz löschen, falls ISBN ungültig ist
             async with db_pool.acquire() as conn:
                 await conn.execute("DELETE FROM library WHERE id = $1", num)
-            return False
+            return False, None
     except Exception as e:
         logger.error(f"Fehler beim Verarbeiten von Artikel {num}: {e}")
-        return False
+        return False, None
+
 
 
 def get_isbn(isbn):

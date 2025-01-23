@@ -10,6 +10,7 @@ import isbn_processing
 import picture_processing
 import price_processing
 import bl_processing
+from excel_processing import ExcelExporter
 from picture_processing import PictureProcessing
 
 logger = logging.getLogger(__name__)
@@ -198,6 +199,8 @@ async def process_library_links_async(db_pool):
 
                         # Eigenschaften in die Datenbank speichern
                         await bl_processing.PropertyToDatabase.process_and_save(soup, num, db_pool)
+
+                        await ExcelExporter.export_to_excel(db_pool, "output.xlsx")
                     else:
                         logger.error(f"HTML-Inhalt konnte für Artikel {num} nicht geladen werden. Überspringe Verarbeitung.")
                 else:

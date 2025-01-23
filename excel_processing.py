@@ -4,25 +4,39 @@ import asyncio
 
 class ExcelExporter:
     """
-    Klasse: ExcelExporter
-    --------------------------
-    Exportiert die Daten aus der `library`-Datenbanktabelle in eine Excel-Datei
-    im gewünschten Format.
-    MAPPING = {
-    "Excel-Spaltenname": "Datenbank-Spaltenname"
-    }
+    Handles the exporting of database data to an Excel file asynchronously.
+
+    This class provides a static method to retrieve data from a database, transform it
+    using predefined column mappings, and write it to an Excel file. It is designed to
+    work with asynchronous database connection pools and leverages pandas for data
+    transformation and I/O operations.
+
     """
 
     @staticmethod
     async def export_to_excel(db_pool, output_file):
         """
-        Funktion: export_to_excel
-        -------------------------
-        Extrahiert Daten aus der `library`-Tabelle und schreibt sie in eine Excel-Datei.
+        Asynchronously exports data from a database pool to an Excel file. The data is
+        queried from a database table, transformed using predefined column mappings,
+        and written to an Excel file. Any missing values in the data are replaced with
+        a default placeholder. An exception is caught and logged if the export operation
+        fails.
 
-        Parameter:
-        - db_pool: Verbindung zur Datenbank.
-        - output_file (str): Der Pfad zur Ausgabe-Excel-Datei.
+        :param db_pool:
+            Async database connection pool. It is used to acquire connections for executing
+            the database queries asynchronously.
+
+        :param output_file:
+            Path to the output Excel file as a string. The exported data will be saved into
+            this file as a worksheet named "Listings".
+
+        :return:
+            None. The function performs an I/O operation to write an Excel file but does not
+            return any value.
+
+        :raises Exception:
+            If there is an error during the database query or while transforming/writing the
+            data to an Excel file, the error is caught, and a message is printed.
         """
         try:
             # Daten aus der Datenbank abfragen
@@ -100,6 +114,8 @@ class ExcelExporter:
                 "Target Audience": "",
                 "Edition": ""
             }
+            
+            
 
             # Nur die relevanten Spalten übernehmen und umbenennen
             df = df[list(columns_mapping.keys())]

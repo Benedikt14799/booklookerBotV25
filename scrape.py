@@ -9,6 +9,7 @@ import database
 import isbn_processing
 import price_processing
 import bl_processing
+from excel_processing import ExcelExporter
 from picture_processing import PictureProcessing
 from price_processing import PriceProcessing
 
@@ -199,7 +200,6 @@ async def process_library_links_async(db_pool):
                         # Eigenschaften in die Datenbank speichern
                         await bl_processing.PropertyToDatabase.process_and_save(soup, num, db_pool)
 
-                        # await ExcelExporter.export_to_excel(db_pool, "output.xlsx")
                     else:
                         logger.error(f"HTML-Inhalt konnte für Artikel {num} nicht geladen werden. Überspringe Verarbeitung.")
                 else:
@@ -231,18 +231,28 @@ async def fetch_html(session, link):
         return await response.text()
 
 
-"""
-Funktion: perform_webscrape_async
----------------------------------
-- Führt die gesamte Webscraping-Pipeline aus.
-- Schritte:
-  1. Füllt die Tabelle `library` mit statischen Daten (`prefill_db_with_static_data`).
-  2. Verarbeitet Buch-Links und ruft zusätzliche Daten ab
-     (`get_isbn_and_link_to_different_scrape_actions_async`).
-"""
 async def perform_webscrape_async(db_pool):
-    await database.prefill_db_with_static_data(db_pool)
-    await process_library_links_async(db_pool)
+    """
+    Führt die gesamte Webscraping-Pipeline aus:
+    1. Füllt die Tabelle `library` mit statischen Daten (`prefill_db_with_static_data`).
+    2. Verarbeitet Buch-Links und ruft zusätzliche Daten ab (`process_library_links_async`).
+    3. Exportiert die vollständige Datenbank als Excel-Datei (`ExcelExporter.export_to_excel`).
+    """
+    try:
+        # Schritt 1: Statische Daten vorfüllen
+        await database.prefill_db_with_static_data(db_pool)
+
+        # Schritt 2: Webscraping und Verarbeitung von Buchdaten
+        await process_library_links_async(db_pool)
+
+        # Schritt 3: Excel-Datei exportieren
+        await ExcelExporter.export_to_excel(db_pool, "output.xlsx")
+        print("Excel-Export abgeschlossen.")
+
+    except Exception as e:
+        logger.error(f"Fehler in perform_webscrape_async: {e}")
+
+
 
 
 

@@ -7,11 +7,10 @@ from bs4 import BeautifulSoup
 
 import database
 import isbn_processing
-import picture_processing
 import price_processing
 import bl_processing
-from excel_processing import ExcelExporter
 from picture_processing import PictureProcessing
+from price_processing import PriceProcessing
 
 logger = logging.getLogger(__name__)
 number_pattern = re.compile(r"\d+")
@@ -194,26 +193,19 @@ async def process_library_links_async(db_pool):
                         soup = BeautifulSoup(html_content, "html.parser")
 
                         # Preisberechnung aufrufen und Bilder mit ISBN verarbeiten
-                        await price_processing.get_price(soup, num, db_pool)
+                        await PriceProcessing.get_price(soup, num, db_pool)
                         await PictureProcessing.get_pictures_with_dnb(soup, num, db_pool, isbn)
 
                         # Eigenschaften in die Datenbank speichern
                         await bl_processing.PropertyToDatabase.process_and_save(soup, num, db_pool)
 
-                        await ExcelExporter.export_to_excel(db_pool, "output.xlsx")
+                        # await ExcelExporter.export_to_excel(db_pool, "output.xlsx")
                     else:
                         logger.error(f"HTML-Inhalt konnte für Artikel {num} nicht geladen werden. Überspringe Verarbeitung.")
                 else:
                     logger.warning(f"Artikel {num} hat keine gültige ISBN. Wird nicht weiter verarbeitet.")
     except Exception as e:
         logger.error(f"Fehler in process_library_links_async: {e}")
-
-
-
-
-    except Exception as e:
-        logger.error(f"Fehler in process_library_links_async: {e}")
-
 
 
 
@@ -255,27 +247,3 @@ async def perform_webscrape_async(db_pool):
 
 
 
-
-# Backlog:
-# async def process_price_and_condition(soup, num, db_pool):
-#     await get_price(soup, num, db_pool)
-#     await get_condition(soup, num, db_pool)
-#     logger.info(f"Preise und Zustand für Artikel {num} verarbeitet.")
-
-    # # Preise und Zustand verarbeiten
-    # await process_price_and_condition(soup, num, db_pool)
-    # await process_images(soup, num, db_pool)
-
-# async def process_images(soup, num, db_pool):
-#     await get_pictures_booklooker(soup, num, db_pool)
-#     logger.info(f"Bilder für Artikel {num} erfolgreich gespeichert.")
-
-# async def process_valid_isbn(isbn, soup, num, session, db_pool):
-#     is_available = await test_if_isbn_available(isbn, session)
-#     async with db_pool.acquire() as conn:
-#         if is_available:
-#             await conn.execute("UPDATE library SET ISBN = $1 WHERE id = $2", isbn, num)
-#             await dataDNB.dnb_getInfo_async(isbn, db_pool, num, soup, session)
-#         else:
-#             await conn.execute("UPDATE library SET ISBN = $1 WHERE id = $2", "KeineISBN", num)
-#             await dataBL.get_information(soup, num, db_pool)

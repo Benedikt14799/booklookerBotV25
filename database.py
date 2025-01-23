@@ -35,7 +35,7 @@ async def create_table(db_pool):
                 Format VARCHAR(255),
                 Duration VARCHAR(255),
                 Buy_It_Now_price NUMERIC,
-                Best_Offer_Enabled BOOLEAN,
+                Best_Offer_Enabled INTEGER,
                 Best_Offer_Auto_Accept_Price NUMERIC,
                 Minimum_Best_Offer_Price NUMERIC,
                 VAT_percent NUMERIC,
@@ -110,7 +110,8 @@ async def prefill_db_with_static_data(db_pool):
                     Shipping_profile_name = 'Standartversand Bücher Deutschland',
                     Return_profile_name = 'Rückgabe für Bücher',
                     Payment_profile_name = 'Zahlung für Bücher',
-                    Quantity = 1
+                    Quantity = 1,
+                    Best_Offer_Enabled = 1
             """)
     except Exception as e:
         # Fehlerbehandlung und Logging

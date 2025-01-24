@@ -10,8 +10,8 @@ class ExcelExporter:
     @staticmethod
     async def export_to_excel(db_pool, output_file):
         """
-        Exportiert Daten aus der Datenbank in eine Excel-Datei. Schreibt alle Spalten aus dem Mapping
-        in die Excel-Datei, auch wenn sie in der Datenbank leer sind. Leere Felder bleiben leer.
+        Exportiert Daten aus der Datenbank in eine Excel-Datei.
+        Schreibt alle Spalten aus dem Mapping in die Excel-Datei, selbst wenn sie keine Werte in der Datenbank haben.
         """
         try:
             # Daten aus der Datenbank abfragen
@@ -111,23 +111,20 @@ class ExcelExporter:
                 "": "Responsible Person 1 ContactURL",
             }
 
-            # Erstelle einen leeren DataFrame mit allen Excel-Spalten
+            # Erstelle einen DataFrame mit allen Spalten aus dem Mapping
             excel_columns = list(columns_mapping.values())
+            print(excel_columns)
             final_df = pd.DataFrame(columns=excel_columns)
+            #print(final_df)
 
             # Fülle den DataFrame mit Daten aus der Datenbank (falls vorhanden)
             for db_col, excel_col in columns_mapping.items():
                 if db_col in db_df.columns:
                     final_df[excel_col] = db_df[db_col]
                 else:
-                    final_df[excel_col] = ""  # Feld bleibt leer
+                    final_df[excel_col] = pd.NA  # Leere Spalten bleiben leer
 
             logger.info("Alle Spalten erfolgreich im finalen DataFrame erstellt.")
-
-            # Überprüfe, ob DataFrame leer ist
-            if final_df.empty:
-                logger.warning("Der finale DataFrame ist leer. Keine Daten zum Exportieren.")
-                return
 
             # Schreibe die Daten in eine Excel-Datei
             final_df.to_excel(output_file, index=False, sheet_name="Listings")

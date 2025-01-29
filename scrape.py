@@ -230,6 +230,27 @@ async def fetch_html(session, link):
         response.raise_for_status()
         return await response.text()
 
+async def export_data_to_excel(db_pool):
+    """
+    Liest Daten (z. B. aus der Tabelle `library`) und ruft anschließend
+    den ExcelExporter auf, um die Daten in eine Excel-Datei zu schreiben.
+    """
+    async with db_pool.acquire() as conn:
+        # Beispiel: Passe dein SELECT-Statement an die tatsächlichen Spalten an,
+        # die du in der Excel-Datei haben willst.
+        rows = await conn.fetch("SELECT * FROM library;")
+        # Oder nur bestimmte Felder, z. B.:
+        # rows = await conn.fetch("SELECT id, isbn, autor, buchtitel FROM library;")
+
+    # rows (typ: List[Record]) in python-Dicts umwandeln
+    data_rows = [dict(record) for record in rows]
+
+    # ExcelExporter verwenden
+    exporter = ExcelExporter()
+    exporter.export_to_excel("mein_excel_export.xlsx", data_rows)
+
+    logger.info("Export zu 'mein_excel_export.xlsx' abgeschlossen.")
+
 
 async def perform_webscrape_async(db_pool):
     """
@@ -246,7 +267,7 @@ async def perform_webscrape_async(db_pool):
         await process_library_links_async(db_pool)
 
         # Schritt 3: Excel-Datei exportieren
-        await ExcelExporter.export_to_excel(db_pool, "output.xlsx")
+        await export_data_to_excel(db_pool)
         print("Excel-Export abgeschlossen.")
 
     except Exception as e:

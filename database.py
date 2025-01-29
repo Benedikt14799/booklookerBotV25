@@ -27,6 +27,7 @@ async def create_table(db_pool):
                 ISBN VARCHAR(255),
                 EPID VARCHAR(255),
                 Start_price NUMERIC,
+                Margin NUMERIC,
                 Quantity INTEGER,
                 photo TEXT,
                 VideoID VARCHAR(255),

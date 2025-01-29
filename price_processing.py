@@ -4,6 +4,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 class PriceProcessing:
     """
     Klasse: PriceProcessing
@@ -13,65 +14,77 @@ class PriceProcessing:
     """
 
     # eBay-Gebühren und zusätzliche Kosten
-    EBAY_PERCENTAGE_FEE = Decimal('0.12')    # eBay-Provisionssatz (12%)
-    EBAY_FIXED_FEE = Decimal('0.35')         # Feste eBay-Gebühr (€0,35)
-    ADDITIONAL_COSTS = Decimal('1.75')       # Zusätzliche Kosten (z.B. Verpackung)
+    EBAY_PERCENTAGE_FEE = Decimal('0.12')  # eBay-Provisionssatz (12%)
+    EBAY_FIXED_FEE = Decimal('0.35')  # Feste eBay-Gebühr (€0,35)
+    ADDITIONAL_COSTS = Decimal('1.75')  # Zusätzliche Kosten (z.B. Verpackung)
 
     # Gewinnmarge
-    PROFIT_MARGIN_PERCENT = Decimal('0.30')  # Gewünschte Gewinnmarge in Prozent (30 %)
-    MINIMUM_PROFIT = Decimal('3.00')         # Mindestgewinn (€3,00)
+    PROFIT_MARGIN_PERCENT = Decimal('0.30')  # Gewünschte Gewinnmarge in Prozent (30%)
+    MINIMUM_PROFIT = Decimal('2.00')  # Mindestgewinn (mindestens 2,00 €)
+    MAXIMUM_PROFIT = Decimal('5.00')  # Maximale Mindestmarge (höchstens 5,00 €)
 
     # Preisgrenzen für Angebote
-    OFFER_MIN_DISCOUNT = Decimal('0.10')     # Rabatt für Minimum Best Offer (10 %)
+    OFFER_MIN_DISCOUNT = Decimal('0.10')  # Rabatt für Minimum Best Offer (10%)
     OFFER_ACCEPT_DISCOUNT = Decimal('0.05')  # Rabatt für Auto Accept Best Offer (5%)
+    MINIMUM_MARGIN_ALLOWED = Decimal('2.00')  # Mindestmarge für Best Offer Preise
 
     # Rundung
-    DECIMAL_PLACES = Decimal('0.01')         # Rundung auf zwei Dezimalstellen
+    DECIMAL_PLACES = Decimal('0.01')  # Rundung auf zwei Dezimalstellen
 
     @staticmethod
     async def get_price(soup, num, db_pool):
-        """
-        Extrahiert den Preis und die Versandkosten eines Artikels, berechnet den Gesamtpreis
-        mit Gewinnmarge und eBay-Gebühren und speichert ihn zusammen mit Best Offer Werten
-        in der Datenbank.
-
-        :param soup: BeautifulSoup-Objekt der Seite.
-        :param num: ID des Artikels in der Datenbank.
-        :param db_pool: Verbindung zur Datenbank.
-        :return: Der berechnete Preis als String oder leerer String bei Fehlern.
-        """
         try:
-            # Preis extrahieren und bereinigen
+            # Extrahiere den Produktpreis
             price_element = soup.find(class_="priceValue")
-            if not price_element:
-                logger.warning(f"Preis nicht gefunden für Artikel {num}. Standardwert (0.00 €) wird verwendet.")
-                price = Decimal('0.00')
-            else:
-                price = PriceProcessing.clean_price(price_element.text)
+            price = PriceProcessing.clean_price(price_element.text) if price_element else Decimal('0.00')
 
-            # Versandkosten extrahieren und bereinigen
+            # Extrahiere die Versandkosten
             shipping_cost_element = soup.find(class_="shippingCosts")
-            if not shipping_cost_element:
-                logger.warning(f"Versandkosten nicht gefunden für Artikel {num}. Standardwert (0.00 €) wird verwendet.")
-                shipping_cost = Decimal('0.00')
-            else:
-                shipping_cost = PriceProcessing.extract_shipping_cost(shipping_cost_element.text)
+            shipping_cost = PriceProcessing.extract_shipping_cost(
+                shipping_cost_element.text) if shipping_cost_element else Decimal('0.00')
 
-            # Gesamtpreis berechnen
-            total_price = price + shipping_cost
-            final_price = PriceProcessing.calculate_price(total_price)
+            # Berechnung der eBay-Gebühren (12% des Gesamtpreises + 0,35 € fixe Gebühr)
+            ebay_fee = (price + shipping_cost) * PriceProcessing.EBAY_PERCENTAGE_FEE
+            total_ebay_fee = ebay_fee + PriceProcessing.EBAY_FIXED_FEE
 
-            # Berechne Angebotspreise
+            # Netto-Einkaufspreis (Produkt + Versand + eBay-Gebühren)
+            net_purchase_price = price + shipping_cost + total_ebay_fee
+
+            # Berechnung des finalen Verkaufspreises
+            final_price = PriceProcessing.calculate_price(net_purchase_price)
+
+            # Dynamische Mindestmarge: 25% des Netto-Einkaufspreises
+            dynamic_min_profit = net_purchase_price * Decimal("0.25")
+
+            # Mindestmarge zwischen 2,00 € und 5,00 € begrenzen
+            minimum_profit = max(PriceProcessing.MINIMUM_PROFIT,
+                                 min(dynamic_min_profit, PriceProcessing.MAXIMUM_PROFIT))
+
+            # Endgültige Marge: Höherer Wert aus gewünschter 30%-Marge oder Mindestmarge
+            margin = max(net_purchase_price * PriceProcessing.PROFIT_MARGIN_PERCENT, minimum_profit)
+            margin = margin.quantize(PriceProcessing.DECIMAL_PLACES, rounding=ROUND_HALF_UP)
+
+            # Berechnung der Angebotspreise
             min_offer_price = PriceProcessing.calculate_min_offer_price(final_price)
             auto_accept_price = PriceProcessing.calculate_auto_accept_price(final_price)
 
-            # Preise in die Datenbank speichern
-            await PriceProcessing.save_price_to_db(db_pool, num, final_price, min_offer_price, auto_accept_price)
+            # Schutzfunktion: Stelle sicher, dass Best Offer Preise nicht unter Mindestmarge fallen
+            min_offer_margin = min_offer_price - (net_purchase_price + PriceProcessing.ADDITIONAL_COSTS)
+            auto_accept_margin = auto_accept_price - (net_purchase_price + PriceProcessing.ADDITIONAL_COSTS)
 
-            logger.info(f"Finaler Preis für Artikel {num} berechnet und gespeichert: {final_price}")
+            if min_offer_margin < PriceProcessing.MINIMUM_MARGIN_ALLOWED:
+                min_offer_price = final_price  # Kein Rabatt, wenn Marge unter 2,00 € fällt
+            if auto_accept_margin < PriceProcessing.MINIMUM_MARGIN_ALLOWED:
+                auto_accept_price = final_price  # Kein Rabatt, wenn Marge unter 2,00 € fällt
+
+            # Speichern der berechneten Preise in die Datenbank
+            await PriceProcessing.save_price_to_db(db_pool, num, final_price, min_offer_price, auto_accept_price,
+                                                   margin)
+
+            logger.info(f"Finaler Preis für Artikel {num} berechnet und gespeichert: {final_price}, Marge: {margin}")
             return str(final_price)
         except Exception as e:
-            logger.exception(f"Ein unerwarteter Fehler beim Verarbeiten von Artikel {num}: {e}")
+            logger.exception(f"Fehler beim Verarbeiten von Artikel {num}: {e}")
             return ''
 
     @staticmethod
@@ -103,36 +116,28 @@ class PriceProcessing:
                 cleaned = match.group(1).replace(',', '.')
                 return Decimal(cleaned)
             else:
-                logger.warning(f"Versandkosten nicht korrekt formatiert: {shipping_cost_text}. Standardwert (0.00 €) wird verwendet.")
+                logger.warning(
+                    f"Versandkosten nicht korrekt formatiert: {shipping_cost_text}. Standardwert (0.00 €) wird verwendet.")
                 return Decimal('0.00')
         except Exception as e:
             logger.error(f"Fehler beim Extrahieren der Versandkosten aus '{shipping_cost_text}': {e}")
             return Decimal('0.00')
 
     @staticmethod
-    def calculate_price(total_price):
+    def calculate_price(net_purchase_price):
         """
-        Berechnet den Endpreis eines Artikels basierend auf dem Gesamtpreis (inkl. Versandkosten),
+        Berechnet den Endpreis eines Artikels basierend auf dem Netto-Einkaufspreis,
         eBay-Gebühren und einer gewünschten Gewinnmarge.
-
-        :param total_price: Der Gesamtpreis des Artikels (inkl. Versandkosten).
-        :return: Der berechnete Endpreis, gerundet auf zwei Dezimalstellen.
         """
         try:
-            if total_price < 0:
+            if net_purchase_price < 0:
                 raise ValueError("Der Gesamtpreis darf nicht negativ sein.")
 
-            # eBay-Gebühren berechnen
-            ebay_fees = (total_price * PriceProcessing.EBAY_PERCENTAGE_FEE) + PriceProcessing.EBAY_FIXED_FEE
-
-            # Gesamtkosten berechnen
-            total_costs = total_price + ebay_fees + PriceProcessing.ADDITIONAL_COSTS
-
-            # Gewünschte Gewinnmarge berechnen
-            desired_profit = max(total_price * PriceProcessing.PROFIT_MARGIN_PERCENT, PriceProcessing.MINIMUM_PROFIT)
-
-            # Endpreis berechnen und runden
-            final_price = (total_costs + desired_profit).quantize(PriceProcessing.DECIMAL_PLACES, rounding=ROUND_HALF_UP)
+            total_costs = net_purchase_price + PriceProcessing.ADDITIONAL_COSTS
+            desired_profit = max(net_purchase_price * PriceProcessing.PROFIT_MARGIN_PERCENT,
+                                 PriceProcessing.MINIMUM_PROFIT)
+            final_price = (total_costs + desired_profit).quantize(PriceProcessing.DECIMAL_PLACES,
+                                                                  rounding=ROUND_HALF_UP)
 
             return final_price
         except Exception as e:
@@ -141,35 +146,16 @@ class PriceProcessing:
 
     @staticmethod
     def calculate_min_offer_price(final_price):
-        """
-        Berechnet den minimalen Preis für ein automatisches Angebot (-10 % vom Endpreis).
-
-        :param final_price: Der finale Artikelpreis.
-        :return: Minimaler Angebotspreis.
-        """
-        return (final_price * (1 - PriceProcessing.OFFER_MIN_DISCOUNT)).quantize(PriceProcessing.DECIMAL_PLACES, rounding=ROUND_HALF_UP)
+        return (final_price * (1 - PriceProcessing.OFFER_MIN_DISCOUNT)).quantize(PriceProcessing.DECIMAL_PLACES,
+                                                                                 rounding=ROUND_HALF_UP)
 
     @staticmethod
     def calculate_auto_accept_price(final_price):
-        """
-        Berechnet den Preis, zu dem Preisvorschläge automatisch akzeptiert werden (-5 % vom Endpreis).
-
-        :param final_price: Der finale Artikelpreis.
-        :return: Automatisch akzeptierter Angebotspreis.
-        """
-        return (final_price * (1 - PriceProcessing.OFFER_ACCEPT_DISCOUNT)).quantize(PriceProcessing.DECIMAL_PLACES, rounding=ROUND_HALF_UP)
+        return (final_price * (1 - PriceProcessing.OFFER_ACCEPT_DISCOUNT)).quantize(PriceProcessing.DECIMAL_PLACES,
+                                                                                    rounding=ROUND_HALF_UP)
 
     @staticmethod
-    async def save_price_to_db(db_pool, num, final_price, min_offer_price, auto_accept_price):
-        """
-        Speichert den berechneten Endpreis und die Angebotspreise in der Datenbank.
-
-        :param db_pool: Verbindung zur Datenbank.
-        :param num: ID des Artikels in der Datenbank.
-        :param final_price: Der zu speichernde Endpreis.
-        :param min_offer_price: Der minimale Angebotspreis.
-        :param auto_accept_price: Der automatisch akzeptierte Angebotspreis.
-        """
+    async def save_price_to_db(db_pool, num, final_price, min_offer_price, auto_accept_price, margin):
         try:
             async with db_pool.acquire() as conn:
                 await conn.execute(
@@ -177,11 +163,12 @@ class PriceProcessing:
                     UPDATE library
                     SET Start_price = $1,
                         Minimum_Best_Offer_Price = $2,
-                        Best_Offer_Auto_Accept_Price = $3
-                    WHERE id = $4
+                        Best_Offer_Auto_Accept_Price = $3,
+                        Margin = $4
+                    WHERE id = $5
                     """,
-                    str(final_price), str(min_offer_price), str(auto_accept_price), num
+                    str(final_price), str(min_offer_price), str(auto_accept_price), str(margin), num
                 )
-                logger.info(f"Preise erfolgreich in die Datenbank geschrieben für Artikel {num}: {final_price}, {min_offer_price}, {auto_accept_price}")
+                logger.info(f"Preise und Marge erfolgreich in die Datenbank geschrieben für Artikel {num}.")
         except Exception as e:
-            logger.error(f"Fehler beim Schreiben des Preises in die Datenbank für Artikel {num}: {e}")
+            logger.error(f"Fehler beim Schreiben der Preise in die Datenbank für Artikel {num}: {e}")

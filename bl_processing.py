@@ -27,6 +27,7 @@ class PropertyToDatabase:
         "Erschienen:": "Erscheinungsjahr"
     }
 
+
     @staticmethod
     def truncate_title(title: str, max_length: int = 80) -> str:
         """

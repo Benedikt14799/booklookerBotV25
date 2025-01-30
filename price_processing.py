@@ -4,7 +4,6 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-
 class PriceProcessing:
     """
     Klasse: PriceProcessing
@@ -27,6 +26,7 @@ class PriceProcessing:
     OFFER_MIN_DISCOUNT = Decimal('0.10')  # Rabatt für Minimum Best Offer (10%)
     OFFER_ACCEPT_DISCOUNT = Decimal('0.05')  # Rabatt für Auto Accept Best Offer (5%)
     MINIMUM_MARGIN_ALLOWED = Decimal('2.00')  # Mindestmarge für Best Offer Preise
+    MIN_ACCEPT_DIFFERENCE = Decimal('0.05')  # Mindestabstand zwischen final_price und auto_accept_price
 
     # Rundung
     DECIMAL_PLACES = Decimal('0.01')  # Rundung auf zwei Dezimalstellen
@@ -68,14 +68,9 @@ class PriceProcessing:
             min_offer_price = PriceProcessing.calculate_min_offer_price(final_price)
             auto_accept_price = PriceProcessing.calculate_auto_accept_price(final_price)
 
-            # Schutzfunktion: Stelle sicher, dass Best Offer Preise nicht unter Mindestmarge fallen
-            min_offer_margin = min_offer_price - (net_purchase_price + PriceProcessing.ADDITIONAL_COSTS)
-            auto_accept_margin = auto_accept_price - (net_purchase_price + PriceProcessing.ADDITIONAL_COSTS)
-
-            if min_offer_margin < PriceProcessing.MINIMUM_MARGIN_ALLOWED:
-                min_offer_price = final_price  # Kein Rabatt, wenn Marge unter 2,00 € fällt
-            if auto_accept_margin < PriceProcessing.MINIMUM_MARGIN_ALLOWED:
-                auto_accept_price = final_price  # Kein Rabatt, wenn Marge unter 2,00 € fällt
+            # 1️⃣ **Fix: Minimum Best Offer darf nie größer sein als Auto Accept**
+            if min_offer_price > auto_accept_price:
+                min_offer_price = auto_accept_price  # Setze min_offer_price auf auto_accept_price
 
             # Speichern der berechneten Preise in die Datenbank
             await PriceProcessing.save_price_to_db(db_pool, num, final_price, min_offer_price, auto_accept_price,
